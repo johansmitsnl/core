@@ -457,7 +457,7 @@ class TibberRtDataCoordinator(update_coordinator.DataUpdateCoordinator):
         )
 
         self._async_remove_device_updates_handler = self.async_add_listener(
-            self._async_device_updates_handler
+            self._add_sensors
         )
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._handle_ha_stop)
 
@@ -467,8 +467,8 @@ class TibberRtDataCoordinator(update_coordinator.DataUpdateCoordinator):
         self._async_remove_device_updates_handler()
 
     @callback
-    def _async_device_updates_handler(self):
-        """Handle received data."""
+    def _add_sensors(self):
+        """Add sensor."""
         if not (live_measurement := self.get_live_measurement()):
             return
 
