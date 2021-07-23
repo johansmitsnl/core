@@ -25,17 +25,15 @@ from homeassistant.const import (
     ELECTRIC_CURRENT_AMPERE,
     ELECTRIC_POTENTIAL_VOLT,
     ENERGY_KILO_WATT_HOUR,
+    EVENT_HOMEASSISTANT_STOP,
     PERCENTAGE,
     POWER_WATT,
     SIGNAL_STRENGTH_DECIBELS,
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import PlatformNotReady
+from homeassistant.helpers import update_coordinator
 from homeassistant.helpers.device_registry import async_get as async_get_dev_reg
-from homeassistant.helpers.dispatcher import (
-    async_dispatcher_connect,
-    async_dispatcher_send,
-)
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_reg
 from homeassistant.util import Throttle, dt as dt_util
 
@@ -61,6 +59,7 @@ class ResetType(Enum):
 class TibberSensorMetadata(NamedTuple):
     """Metadata for an individual Tibber sensor."""
 
+    key: str
     name: str
     device_class: str
     unit: str | None = None
@@ -68,133 +67,154 @@ class TibberSensorMetadata(NamedTuple):
     reset_type: ResetType | None = None
 
 
-RT_SENSOR_MAP: dict[str, TibberSensorMetadata] = {
-    "averagePower": TibberSensorMetadata(
+RT_SENSORS: list[TibberSensorMetadata] = [
+    TibberSensorMetadata(
+        "averagePower",
         "average power",
         device_class=DEVICE_CLASS_POWER,
         unit=POWER_WATT,
     ),
-    "power": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "power",
         "power",
         device_class=DEVICE_CLASS_POWER,
         unit=POWER_WATT,
     ),
-    "powerProduction": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "powerProduction",
         "power production",
         device_class=DEVICE_CLASS_POWER,
         unit=POWER_WATT,
     ),
-    "minPower": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "minPower",
         "min power",
         device_class=DEVICE_CLASS_POWER,
         unit=POWER_WATT,
     ),
-    "maxPower": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "maxPower",
         "max power",
         device_class=DEVICE_CLASS_POWER,
         unit=POWER_WATT,
     ),
-    "accumulatedConsumption": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedConsumption",
         "accumulated consumption",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.DAILY,
     ),
-    "accumulatedConsumptionLastHour": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedConsumptionLastHour",
         "accumulated consumption current hour",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.HOURLY,
     ),
-    "accumulatedProduction": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedProduction",
         "accumulated production",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.DAILY,
     ),
-    "accumulatedProductionLastHour": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedProductionLastHour",
         "accumulated production current hour",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.HOURLY,
     ),
-    "lastMeterConsumption": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "lastMeterConsumption",
         "last meter consumption",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "lastMeterProduction": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "lastMeterProduction",
         "last meter production",
         device_class=DEVICE_CLASS_ENERGY,
         unit=ENERGY_KILO_WATT_HOUR,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "voltagePhase1": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "voltagePhase1",
         "voltage phase1",
         device_class=DEVICE_CLASS_VOLTAGE,
         unit=ELECTRIC_POTENTIAL_VOLT,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "voltagePhase2": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "voltagePhase2",
         "voltage phase2",
         device_class=DEVICE_CLASS_VOLTAGE,
         unit=ELECTRIC_POTENTIAL_VOLT,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "voltagePhase3": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "voltagePhase3",
         "voltage phase3",
         device_class=DEVICE_CLASS_VOLTAGE,
         unit=ELECTRIC_POTENTIAL_VOLT,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "currentL1": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "currentL1",
         "current L1",
         device_class=DEVICE_CLASS_CURRENT,
         unit=ELECTRIC_CURRENT_AMPERE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "currentL2": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "currentL2",
         "current L2",
         device_class=DEVICE_CLASS_CURRENT,
         unit=ELECTRIC_CURRENT_AMPERE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "currentL3": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "currentL3",
         "current L3",
         device_class=DEVICE_CLASS_CURRENT,
         unit=ELECTRIC_CURRENT_AMPERE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "signalStrength": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "signalStrength",
         "signal strength",
         device_class=DEVICE_CLASS_SIGNAL_STRENGTH,
         unit=SIGNAL_STRENGTH_DECIBELS,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "accumulatedReward": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedReward",
         "accumulated reward",
         device_class=DEVICE_CLASS_MONETARY,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.DAILY,
     ),
-    "accumulatedCost": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "accumulatedCost",
         "accumulated cost",
         device_class=DEVICE_CLASS_MONETARY,
         state_class=STATE_CLASS_MEASUREMENT,
         reset_type=ResetType.DAILY,
     ),
-    "powerFactor": TibberSensorMetadata(
+    TibberSensorMetadata(
+        "powerFactor",
         "power factor",
         device_class=DEVICE_CLASS_POWER_FACTOR,
         unit=PERCENTAGE,
         state_class=STATE_CLASS_MEASUREMENT,
     ),
-}
+]
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
@@ -220,7 +240,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(TibberSensorElPrice(home))
         if home.has_real_time_consumption:
             await home.rt_subscribe(
-                TibberRtDataHandler(async_add_entities, home, hass).async_callback
+                TibberRtDataCoordinator(
+                    async_add_entities, home, hass
+                ).async_set_updated_data
             )
 
         # migrate
@@ -254,23 +276,18 @@ class TibberSensor(SensorEntity):
         """Initialize the sensor."""
         self._tibber_home = tibber_home
         self._home_name = tibber_home.info["viewer"]["home"]["appNickname"]
-        self._device_name = None
         if self._home_name is None:
             self._home_name = tibber_home.info["viewer"]["home"]["address"].get(
                 "address1", ""
             )
+        self._device_name = None
         self._model = None
-
-    @property
-    def device_id(self):
-        """Return the ID of the physical device this sensor is part of."""
-        return self._tibber_home.home_id
 
     @property
     def device_info(self):
         """Return the device_info of the device."""
         device_info = {
-            "identifiers": {(TIBBER_DOMAIN, self.device_id)},
+            "identifiers": {(TIBBER_DOMAIN, self._tibber_home.home_id)},
             "name": self._device_name,
             "manufacturer": MANUFACTURER,
         }
@@ -354,17 +371,23 @@ class TibberSensorElPrice(TibberSensor):
         ]["estimatedAnnualConsumption"]
 
 
-class TibberSensorRT(TibberSensor):
+class TibberSensorRT(update_coordinator.CoordinatorEntity, TibberSensor):
     """Representation of a Tibber sensor for real time consumption."""
 
-    _attr_should_poll = False
-
-    def __init__(self, tibber_home, metadata: TibberSensorMetadata, initial_state):
+    def __init__(
+        self,
+        tibber_home,
+        metadata: TibberSensorMetadata,
+        initial_state,
+        coordinator: TibberRtDataCoordinator,
+    ):
         """Initialize the sensor."""
-        super().__init__(tibber_home)
+        update_coordinator.CoordinatorEntity.__init__(self, coordinator)
+        TibberSensor.__init__(self, tibber_home)
         self._model = "Tibber Pulse"
         self._device_name = f"{self._model} {self._home_name}"
-        self._metadata = metadata
+        self._reset_type = metadata.reset_type
+        self._key = metadata.key
 
         self._attr_device_class = metadata.device_class
         self._attr_name = f"{metadata.name} {self._home_name}"
@@ -389,37 +412,34 @@ class TibberSensorRT(TibberSensor):
         else:
             self._attr_last_reset = None
 
-    async def async_added_to_hass(self):
-        """Start listen for real time data."""
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                SIGNAL_UPDATE_ENTITY.format(self.unique_id),
-                self._set_state,
-            )
-        )
-
     @property
     def available(self):
         """Return True if entity is available."""
         return self._tibber_home.rt_subscription_running
 
     @callback
-    def _set_state(self, state, timestamp):
-        """Set sensor state."""
-        if state < self._attr_state and self._metadata.reset_type == ResetType.DAILY:
-            self._attr_last_reset = dt_util.as_utc(
-                timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
-            )
-        if state < self._attr_state and self._metadata.reset_type == ResetType.HOURLY:
-            self._attr_last_reset = dt_util.as_utc(
-                timestamp.replace(minute=0, second=0, microsecond=0)
-            )
+    def _handle_coordinator_update(self) -> None:
+        if not (live_measurement := self.coordinator.get_live_measurement()):  # type: ignore
+            return
+        state = live_measurement.get(self._key)
+        print("state", state, self._key)
+        if state is None:
+            return
+        timestamp = dt_util.parse_datetime(live_measurement["timestamp"])
+        if timestamp is not None and state < self._attr_state:
+            if self._reset_type == ResetType.DAILY:
+                self._attr_last_reset = dt_util.as_utc(
+                    timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+                )
+            elif self._reset_type == ResetType.HOURLY:
+                self._attr_last_reset = dt_util.as_utc(
+                    timestamp.replace(minute=0, second=0, microsecond=0)
+                )
         self._attr_state = state
         self.async_write_ha_state()
 
 
-class TibberRtDataHandler:
+class TibberRtDataCoordinator(update_coordinator.DataUpdateCoordinator):
     """Handle Tibber realtime data."""
 
     def __init__(self, async_add_entities, tibber_home, hass):
@@ -427,43 +447,52 @@ class TibberRtDataHandler:
         self._async_add_entities = async_add_entities
         self._tibber_home = tibber_home
         self.hass = hass
-        self._entities = {}
+        self._all_sensors = RT_SENSORS.copy()
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=tibber_home.info["viewer"]["home"]["address"].get(
+                "address1", "Tibber"
+            ),
+        )
 
-    async def async_callback(self, payload):
+        self._async_remove_device_updates_handler = self.async_add_listener(
+            self._async_device_updates_handler
+        )
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._handle_ha_stop)
+
+    @callback
+    def _handle_ha_stop(self, _event) -> None:
+        """Handle Home Assistant stopping."""
+        self._async_remove_device_updates_handler()
+
+    @callback
+    def _async_device_updates_handler(self):
         """Handle received data."""
-        errors = payload.get("errors")
-        if errors:
-            _LOGGER.error(errors[0])
-            return
-        data = payload.get("data")
-        if data is None:
-            return
-        live_measurement = data.get("liveMeasurement")
-        if live_measurement is None:
+        if not (live_measurement := self.get_live_measurement()):
             return
 
-        timestamp = dt_util.parse_datetime(live_measurement.pop("timestamp"))
         new_entities = []
-        for sensor_type, state in live_measurement.items():
-            if state is None or sensor_type not in RT_SENSOR_MAP:
+        for sensor_description in self._all_sensors:
+            print("....", sensor_description.key)
+            state = live_measurement.get(sensor_description.key)
+            if state is None:
                 continue
-            if sensor_type == "powerFactor":
-                state *= 100.0
-            if sensor_type in self._entities:
-                async_dispatcher_send(
-                    self.hass,
-                    SIGNAL_UPDATE_ENTITY.format(self._entities[sensor_type]),
-                    state,
-                    timestamp,
-                )
-            else:
-                sensor_meta = RT_SENSOR_MAP[sensor_type]
-                entity = TibberSensorRT(
-                    self._tibber_home,
-                    sensor_meta,
-                    state,
-                )
-                new_entities.append(entity)
-                self._entities[sensor_type] = entity.unique_id
+            entity = TibberSensorRT(
+                self._tibber_home,
+                sensor_description,
+                state,
+                self,
+            )
+            new_entities.append(entity)
+            self._all_sensors.remove(sensor_description)
         if new_entities:
             self._async_add_entities(new_entities)
+
+    def get_live_measurement(self):
+        """Get live measurement data."""
+        errors = self.data.get("errors")
+        if errors:
+            _LOGGER.error(errors[0])
+            return None
+        return self.data.get("data", {}).get("liveMeasurement")
