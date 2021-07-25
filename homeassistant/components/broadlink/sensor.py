@@ -1,5 +1,8 @@
 """Support for Broadlink sensors."""
+from __future__ import annotations
+
 import logging
+from typing import NamedTuple
 
 import voluptuous as vol
 
@@ -21,22 +24,37 @@ from .helpers import import_device
 
 _LOGGER = logging.getLogger(__name__)
 
-SENSOR_TYPES = {
-    "temperature": (
+
+class SensorMetadata(NamedTuple):
+    """Metadata for an individual sensor."""
+
+    name: str
+    unit: str | None = None
+    device_class: str | None = None
+    state_class: str | None = None
+
+
+SENSOR_TYPES: dict[str, SensorMetadata] = {
+    "temperature": SensorMetadata(
         "Temperature",
-        TEMP_CELSIUS,
-        DEVICE_CLASS_TEMPERATURE,
-        STATE_CLASS_MEASUREMENT,
+        unit=TEMP_CELSIUS,
+        device_class=DEVICE_CLASS_TEMPERATURE,
+        state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "air_quality": ("Air Quality", None, None, None),
-    "humidity": (
+    "air_quality": SensorMetadata(
+        "Air Quality",
+    ),
+    "humidity": SensorMetadata(
         "Humidity",
-        PERCENTAGE,
-        DEVICE_CLASS_HUMIDITY,
-        STATE_CLASS_MEASUREMENT,
+        unit=PERCENTAGE,
+        device_class=DEVICE_CLASS_HUMIDITY,
+        state_class=STATE_CLASS_MEASUREMENT,
     ),
-    "light": ("Light", None, DEVICE_CLASS_ILLUMINANCE, None),
-    "noise": ("Noise", None, None, None),
+    "light": SensorMetadata(
+        "Light",
+        device_class=DEVICE_CLASS_ILLUMINANCE,
+    ),
+    "noise": SensorMetadata("Noise"),
 }
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
@@ -77,12 +95,12 @@ class BroadlinkSensor(BroadlinkEntity, SensorEntity):
         self._coordinator = device.update_manager.coordinator
         self._monitored_condition = monitored_condition
 
-        self._attr_device_class = SENSOR_TYPES[monitored_condition][2]
-        self._attr_name = f"{device.name} {SENSOR_TYPES[monitored_condition][0]}"
-        self._attr_state_class = SENSOR_TYPES[monitored_condition][3]
+        self._attr_device_class = SENSOR_TYPES[monitored_condition].device_class
+        self._attr_name = f"{device.name} {SENSOR_TYPES[monitored_condition].name}"
+        self._attr_state_class = SENSOR_TYPES[monitored_condition].state_class
         self._attr_state = self._coordinator.data[monitored_condition]
         self._attr_unique_id = f"{device.unique_id}-{monitored_condition}"
-        self._attr_unit_of_measurement = SENSOR_TYPES[monitored_condition][1]
+        self._attr_unit_of_measurement = SENSOR_TYPES[monitored_condition].unit
 
     @callback
     def update_data(self):
