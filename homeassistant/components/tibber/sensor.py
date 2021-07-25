@@ -435,6 +435,8 @@ class TibberSensorRT(update_coordinator.CoordinatorEntity, TibberSensor):
                 self._attr_last_reset = dt_util.as_utc(
                     timestamp.replace(minute=0, second=0, microsecond=0)
                 )
+        if self._key == "powerFactor":
+            state *= 100.0
         self._attr_state = state
         self.async_write_ha_state()
 
